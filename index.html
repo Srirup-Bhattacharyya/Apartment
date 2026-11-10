@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Shri Apartment | Maintenance Desk</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div id="loginScreen" class="login-shell">
+    <div class="login-art">
+      <div class="brand-mark">SA</div>
+      <p class="eyebrow">SHRADDHANJALLI APARTMENT</p>
+      <h1>Keep every rupee<br><em>accountable.</em></h1>
+      <p class="login-copy">A clear, friendly way to manage monthly maintenance, pending dues, wallets and receipts for every home.</p>
+      <div class="login-stats"><span><strong>100%</strong><small>payment history</small></span><span><strong>24/7</strong><small>balance visibility</small></span></div>
+    </div>
+    <form id="loginForm" class="login-card">
+      <div class="brand-row"><div class="brand-mark small">SA</div><span>Maintenance Desk</span></div>
+      <h2>Welcome back</h2>
+      <p class="muted">Sign in to your apartment account.</p>
+      <label>Username<input id="loginUsername" required autocomplete="username" placeholder="e.g. admin"></label>
+      <label>Password<input id="loginPassword" required type="password" autocomplete="current-password" placeholder="Enter password"></label>
+      <button class="primary wide" type="submit">Sign in <span>→</span></button>
+      <p id="loginError" class="form-error"></p>
+    </form>
+  </div>
+
+  <div id="appShell" class="app-shell hidden">
+    <aside class="sidebar">
+      <div class="brand-row"><div class="brand-mark small">SA</div><span>Maintenance<br><b>Desk</b></span></div>
+      <div id="managerBadge" class="manager-badge"></div>
+      <nav id="mainNav">
+        <button class="nav-item active" data-view="overview"><span>⌂</span> Overview</button>
+        <button class="nav-item manager-only" data-view="members"><span>♙</span> Members</button>
+        <button class="nav-item" data-view="payments"><span>↗</span> Payments</button>
+        <button class="nav-item" data-view="wallet"><span>◈</span> Wallet</button>
+        <button class="nav-item" data-view="receipts"><span>▤</span> Receipts</button>
+      </nav>
+      <div class="sidebar-bottom">
+        <button class="nav-item manager-only" data-view="settings"><span>⚙</span> Settings</button>
+        <button id="logoutBtn" class="nav-item logout"><span>↪</span> Log out</button>
+      </div>
+    </aside>
+    <main class="main-content">
+      <header class="topbar"><div><p class="eyebrow">NOVEMBER 2026 BILLING CYCLE</p><h1 id="pageTitle">Good morning, manager</h1></div><div class="top-actions"><button id="quickPayBtn" class="primary">＋ Record payment</button><div id="userAvatar" class="avatar">AM</div></div></header>
+      <div id="toast" class="toast"></div>
+      <section id="view-overview" class="view"></section>
+      <section id="view-members" class="view hidden"></section>
+      <section id="view-payments" class="view hidden"></section>
+      <section id="view-wallet" class="view hidden"></section>
+      <section id="view-receipts" class="view hidden"></section>
+      <section id="view-settings" class="view hidden"></section>
+    </main>
+  </div>
+
+  <div id="modalRoot"></div>
+  <script src="app.js"></script>
+</body>
+</html>
