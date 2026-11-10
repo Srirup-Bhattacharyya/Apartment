@@ -37,6 +37,36 @@ To remove the four scheduled tasks:
 
 The FastAPI backend serves the frontend and stores authentication, dues, payments, wallets, and settings in MariaDB. Direct UPI/bank submissions remain pending until the manager checks the bank statement and approves them because this free setup has no verified payment callback. The current browser UI still uses its existing local demo storage; wiring each UI action to these API endpoints is the next integration phase.
 
+## Access from multiple home devices
+
+The laptop is the server and must be connected to the same TP-Link Wi-Fi
+network as the phones, tablets, and computers using the website. Start FastAPI
+with the scheduled runner or manually:
+
+```powershell
+uvicorn backend.main:app --host 0.0.0.0 --port 8000
+```
+
+Reserve the laptop's IPv4 address in the TP-Link router's **DHCP Address
+Reservation** section. If the laptop receives `192.168.0.105`, every device on
+the home network opens:
+
+```text
+http://192.168.0.105:8000
+```
+
+Run [configure-windows-firewall.ps1](./scripts/configure-windows-firewall.ps1)
+once from an elevated PowerShell so other devices can reach port 8000:
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\configure-windows-firewall.ps1
+```
+
+The firewall rule is limited to Windows **Private** networks. Do not enable
+router port forwarding for ports 8000 or 3306. Devices outside the home Wi-Fi
+will not connect while the server is offline; access from outside should use a
+VPN rather than exposing MariaDB or FastAPI directly to the internet.
+
 ## Run it
 
 Open [index.html](./index.html) in a browser. No build step or installation is required.
