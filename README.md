@@ -14,6 +14,27 @@ The current deployment target is a local PC using MariaDB and FastAPI. No paid h
 6. Start the app with `uvicorn backend.main:app --reload`.
 7. Open `http://127.0.0.1:8000`.
 
+## Scheduled server hours
+
+The laptop server can run only during the approved windows: 9:00 AM–4:00 PM and
+6:30 PM–3:30 AM. From an elevated PowerShell opened in the project folder, run:
+
+```powershell
+Set-ExecutionPolicy -Scope Process Bypass
+.\scripts\register-server-schedule.ps1
+```
+
+The scheduled tasks start and stop only the FastAPI process using a PID file.
+Server output is written to the ignored `runtime` folder. During the offline
+period, open [offline.html](./offline.html) on the tablet to show the planned
+maintenance message; a fully stopped server cannot serve a network page.
+
+To remove the four scheduled tasks:
+
+```powershell
+.\scripts\unregister-server-schedule.ps1
+```
+
 The FastAPI backend serves the frontend and stores authentication, dues, payments, wallets, and settings in MariaDB. Direct UPI/bank submissions remain pending until the manager checks the bank statement and approves them because this free setup has no verified payment callback. The current browser UI still uses its existing local demo storage; wiring each UI action to these API endpoints is the next integration phase.
 
 ## Run it
