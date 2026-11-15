@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Shri Apartment | Maintenance Desk</title>
+  <title>Apartment Maintenance Desk</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
@@ -12,20 +12,21 @@
 <body>
   <div id="loginScreen" class="login-shell">
     <div class="login-art">
-      <div class="brand-mark">SA</div>
-      <p class="eyebrow">SHRADDHANJALLI APARTMENT</p>
-      <h1>Keep every rupee<br><em>accountable.</em></h1>
-      <p class="login-copy">A clear, friendly way to manage monthly maintenance, pending dues, wallets and receipts for every home.</p>
-      <div class="login-stats"><span><strong>100%</strong><small>payment history</small></span><span><strong>24/7</strong><small>balance visibility</small></span></div>
+      <div class="login-brand">SA</div>
+      <div class="login-illustration" aria-hidden="true"><span class="sun"></span><span class="leaf leaf-one"></span><span class="leaf leaf-two"></span><span class="flower flower-one"></span><span class="flower flower-two"></span><span class="home-shape">⌂</span></div>
+      <h1>Simple apartment<br><em>accounts.</em></h1>
+      <p class="login-copy">Keep monthly maintenance, balances and receipts organized for every home.</p>
+      <div class="login-dots" aria-hidden="true"><i class="active"></i><i></i><i></i><i></i></div>
     </div>
     <form id="loginForm" class="login-card">
-      <div class="brand-row"><div class="brand-mark small">SA</div><span>Maintenance Desk</span></div>
-      <h2>Welcome back</h2>
-      <p class="muted">Sign in to your apartment account.</p>
-      <label>Username<input id="loginUsername" required autocomplete="username" placeholder="e.g. admin"></label>
-      <label>Password<input id="loginPassword" required type="password" autocomplete="current-password" placeholder="Enter password"></label>
-      <button class="primary wide" type="submit">Sign in <span>→</span></button>
+      <div class="login-wordmark">Shraddhanjalli</div>
+      <p class="login-welcome">Welcome back</p>
+      <label>Username or Email<input id="loginUsername" required autocomplete="username" placeholder="Enter your username"></label>
+      <label>Password<input id="loginPassword" required type="password" autocomplete="current-password" placeholder="Enter your password"></label>
+      <button class="login-submit" type="submit">Sign in</button>
       <p id="loginError" class="form-error"></p>
+      <div class="login-divider"><span>or</span></div>
+      <p class="login-note">Use your apartment account credentials to continue.</p>
     </form>
   </div>
 
