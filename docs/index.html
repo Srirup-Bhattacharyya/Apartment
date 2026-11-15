@@ -1,15 +1,11 @@
 <!doctype html>
-<html lang="en">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Shraddhanjalli Apartment</title>
-  <style>body{font-family:system-ui,sans-serif;display:grid;place-items:center;min-height:100vh;background:#f7f9f7;color:#17231f}main{text-align:center;padding:2rem}a{color:#177b59}</style>
-</head>
-<body>
-  <main>
-    <h1>Shraddhanjalli Apartment</h1>
-    <p id="status">Server is currently unavailable.</p>
-  </main>
-</body>
-</html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Shraddhanjalli Apartment</title></head>
+<body><p id="status">Connecting to the apartment server...</p>
+<script>
+const target = 'https://crowd-via-tolerance-hurricane.trycloudflare.com';
+const status = document.getElementById("status");
+fetch(target + "/api/health", { mode: "cors" })
+  .then((response) => { if (!response.ok) throw new Error("offline"); window.location.replace(target); })
+  .catch(() => { status.textContent = "The apartment server is currently unavailable."; });
+</script></body></html>
