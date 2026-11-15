@@ -19,7 +19,8 @@ The current deployment target is a local PC using MariaDB and FastAPI. No paid h
 Run `python server_control.py` on the laptop. The control window has a
 **SET UP DATABASE** button and one server button: green means the FastAPI server
 and MariaDB are running and red means they are off.
-Starting opens the website; stopping opens [offline.html](./offline.html).
+Starting opens the local website and starts a free Cloudflare Quick Tunnel.
+Stopping closes FastAPI and the tunnel; the public URL then becomes unavailable.
 The control window must remain open while the server is running.
 
 The setup action detects the operating system, starts Docker MariaDB when
@@ -29,6 +30,15 @@ apartment records, and only starts FastAPI after port 3306 is ready.
 
 A browser page cannot start a fully stopped server because no process is
 listening for the click. The control window is therefore the server switch.
+
+## Free public access with Cloudflare
+
+When the server is started, the controller detects or offers to install
+Cloudflare's free `cloudflared` tool using `winget`, then runs a Quick Tunnel
+to the local FastAPI server. It displays a temporary HTTPS URL ending in
+`trycloudflare.com`; click the URL in the controller to open it. The URL
+changes when the tunnel restarts, and the laptop and controller must remain
+running. No router port forwarding or paid domain is required.
 
 The FastAPI backend serves the frontend and stores authentication, dues, payments, wallets, and settings in MariaDB. Direct UPI/bank submissions remain pending until the manager checks the bank statement and approves them because this free setup has no verified payment callback. The current browser UI still uses its existing local demo storage; wiring each UI action to these API endpoints is the next integration phase.
 
