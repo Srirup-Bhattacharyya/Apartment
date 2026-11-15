@@ -4,6 +4,7 @@ import re
 import shutil
 import socket
 import subprocess
+import sys
 import time
 from pathlib import Path
 from tkinter import messagebox, simpledialog
@@ -175,7 +176,9 @@ def prepare_database() -> tuple[bool, str]:
     error = _configure_database()
     if error:
         return False, error
-    seed = _run([str(PROJECT_ROOT / ".venv" / "Scripts" / "python.exe"), "-m", "backend.seed"] if os.name == "nt" else ["python3", "-m", "backend.seed"])
+    virtual_python = PROJECT_ROOT / ".venv" / ("Scripts/python.exe" if os.name == "nt" else "bin/python")
+    python_executable = str(virtual_python) if virtual_python.exists() else sys.executable
+    seed = _run([python_executable, "-m", "backend.seed"])
     if seed.returncode != 0:
         return False, seed.stderr.strip() or "Database initialization failed."
     return True, "MariaDB is ready."
