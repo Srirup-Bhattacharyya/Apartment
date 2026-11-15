@@ -3,6 +3,8 @@ import re
 import subprocess
 import sys
 import tkinter as tk
+import time
+import urllib.request
 import webbrowser
 from pathlib import Path
 from tkinter import messagebox
@@ -11,6 +13,7 @@ from database_setup import prepare_database
 
 PROJECT_ROOT = Path(__file__).resolve().parent
 TUNNEL_LOG = PROJECT_ROOT / "cloudflared.log"
+PAGES_URL = "https://srirup-bhattacharyya.github.io/Apartment/"
 HOST = "127.0.0.1"
 PORT = 8000
 
@@ -96,13 +99,59 @@ class ServerControl:
         match = re.search(r"https://[a-z0-9-]+\.trycloudflare\.com", text)
         if match:
             url = match.group(0)
-            self.public_url.configure(text=url, fg="#177b59", cursor="hand2")
-            self.public_url.bind("<Button-1>", lambda _event: webbrowser.open(url))
+            if not self.test_tunnel(url):
+                self.public_url.configure(text="Cloudflare tunnel found but health check failed", fg="#b83f49")
+                return
+            if not self.publish_pages_redirect(url):
+                self.public_url.configure(text="Tunnel ready; GitHub Pages update failed", fg="#b83f49")
+                return
+            self.public_url.configure(text=PAGES_URL, fg="#177b59", cursor="hand2")
+            self.public_url.bind("<Button-1>", lambda _event: webbrowser.open(PAGES_URL))
             return
         if self.tunnel_process.poll() is None:
             self.window.after(1000, self.read_tunnel_url)
         else:
             self.public_url.configure(text="Cloudflare tunnel failed; see cloudflared.log", fg="#b83f49")
+
+    def test_tunnel(self, url: str) -> bool:
+        try:
+            with urllib.request.urlopen(f"{url}/api/health", timeout=10) as response:
+                return response.status == 200
+        except (OSError, ValueError):
+            return False
+
+    def publish_pages_redirect(self, url: str) -> bool:
+        page = f"""<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Shraddhanjalli Apartment</title></head>
+<body><p id="status">Connecting to the apartment server...</p>
+<script>
+const target = {url!r};
+const status = document.getElementById("status");
+fetch(target + "/api/health", {{ mode: "cors" }})
+  .then((response) => {{ if (!response.ok) throw new Error("offline"); window.location.replace(target); }})
+  .catch(() => {{ status.textContent = "The apartment server is currently unavailable."; }});
+</script></body></html>"""
+        page_path = PROJECT_ROOT / "docs" / "index.html"
+        page_path.write_text(page, encoding="utf-8")
+        commands = [
+            ["git", "add", "docs/index.html"],
+            ["git", "commit", "-m", "Update public server address"],
+            ["git", "push", "origin", "main"],
+        ]
+        for command in commands:
+            result = subprocess.run(command, cwd=PROJECT_ROOT, capture_output=True, text=True, check=False)
+            if result.returncode != 0 and not (command[1] == "commit" and "nothing to commit" in result.stdout.lower()):
+                return False
+        for _ in range(30):
+            try:
+                with urllib.request.urlopen(PAGES_URL, timeout=10) as response:
+                    if url in response.read().decode("utf-8", errors="replace"):
+                        return True
+            except OSError:
+                pass
+            time.sleep(2)
+        return False
 
     def toggle_server(self) -> None:
         if self.process is None or self.process.poll() is not None:
