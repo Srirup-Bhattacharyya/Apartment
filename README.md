@@ -16,10 +16,16 @@ The current deployment target is a local PC using MariaDB and FastAPI. No paid h
 
 ## Manual server control
 
-Run `python server_control.py` on the laptop. The control window has one
-button: green means the FastAPI server is running and red means it is off.
+Run `python server_control.py` on the laptop. The control window has a
+**SET UP DATABASE** button and one server button: green means the FastAPI server
+and MariaDB are running and red means they are off.
 Starting opens the website; stopping opens [offline.html](./offline.html).
 The control window must remain open while the server is running.
+
+The setup action detects the operating system, starts Docker MariaDB when
+available, otherwise detects or offers installation of MariaDB through the
+system package manager. It then creates the configured database/user, seeds the
+apartment records, and only starts FastAPI after port 3306 is ready.
 
 A browser page cannot start a fully stopped server because no process is
 listening for the click. The control window is therefore the server switch.

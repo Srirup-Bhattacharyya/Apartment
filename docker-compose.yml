@@ -3,10 +3,10 @@ services:
     image: mariadb:11
     restart: unless-stopped
     environment:
-      MARIADB_DATABASE: shraddhanjalli
-      MARIADB_USER: maintenance
-      MARIADB_PASSWORD: change-me
-      MARIADB_ROOT_PASSWORD: change-root-password
+      MARIADB_DATABASE: ${MARIADB_DATABASE:-shraddhanjalli}
+      MARIADB_USER: ${MARIADB_USER:-maintenance}
+      MARIADB_PASSWORD: ${MARIADB_PASSWORD:-change-me}
+      MARIADB_ROOT_PASSWORD: ${MARIADB_ROOT_PASSWORD:-change-root-password}
     ports:
       - "3306:3306"
     volumes:
