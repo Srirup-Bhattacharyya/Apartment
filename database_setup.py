@@ -33,6 +33,32 @@ def _run(command: list[str], *, cwd: Path = PROJECT_ROOT) -> subprocess.Complete
     return subprocess.run(command, cwd=cwd, text=True, capture_output=True, check=False)
 
 
+def _mariadb_program(name: str) -> Path | None:
+    candidates = list(Path("C:/Program Files").glob("MariaDB*/bin/" + name))
+    return next((candidate for candidate in candidates if candidate.exists()), None)
+
+
+def _initialize_windows_service() -> tuple[bool, str]:
+    installer = _mariadb_program("mariadb-install-db.exe")
+    if installer is None:
+        return False, "MariaDB is installed, but mariadb-install-db.exe was not found."
+    root_password = simpledialog.askstring("MariaDB setup", "Create a MariaDB root password:", show="*")
+    if root_password is None or not root_password:
+        return False, "A MariaDB root password is required."
+    data_directory = PROJECT_ROOT / "database"
+    result = _run(
+        [
+            str(installer),
+            f"--datadir={data_directory}",
+            "--service=ShraddhanjalliMariaDB",
+            f"--password={root_password}",
+        ]
+    )
+    if result.returncode != 0:
+        return False, result.stderr.strip() or result.stdout.strip() or "MariaDB database initialization failed."
+    return True, ""
+
+
 def _start_local_service() -> tuple[bool, str]:
     system = platform.system()
     if system == "Windows":
@@ -46,7 +72,10 @@ def _start_local_service() -> tuple[bool, str]:
         )
         service_names = [line.strip() for line in services.stdout.splitlines() if line.strip()]
         if not service_names:
-            return False, "No MariaDB/MySQL Windows service was found after installation."
+            initialized, initialization_error = _initialize_windows_service()
+            if not initialized:
+                return False, initialization_error or "No MariaDB/MySQL Windows service was found."
+            service_names = ["ShraddhanjalliMariaDB"]
         errors = []
         for service in service_names:
             result = _run(["sc.exe", "start", service])

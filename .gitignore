@@ -6,3 +6,4 @@ supabase-config.js
 *.sqlite3
 runtime/
 .vscode/
+database/
