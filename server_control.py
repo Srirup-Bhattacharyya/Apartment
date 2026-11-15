@@ -17,6 +17,7 @@ TUNNEL_LOG = PROJECT_ROOT / "cloudflared.log"
 PAGES_URL = "https://srirup-bhattacharyya.github.io/Apartment/"
 HOST = "127.0.0.1"
 PORT = 8000
+MAX_TUNNEL_HEALTH_ATTEMPTS = 90
 
 
 class ServerControl:
@@ -105,7 +106,7 @@ class ServerControl:
             healthy, error = self.test_tunnel(url)
             if not healthy:
                 self.tunnel_health_attempts += 1
-                if self.tunnel_health_attempts < 30 and self.tunnel_process.poll() is None:
+                if self.tunnel_health_attempts < MAX_TUNNEL_HEALTH_ATTEMPTS and self.tunnel_process.poll() is None:
                     self.public_url.configure(text="Cloudflare tunnel found; waiting for health check...", fg="#75807b")
                     self.window.after(2000, self.read_tunnel_url)
                 else:
