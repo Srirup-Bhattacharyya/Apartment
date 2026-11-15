@@ -1,5 +1,6 @@
 import os
 import re
+import shutil
 import subprocess
 import sys
 import tkinter as tk
@@ -101,13 +102,14 @@ class ServerControl:
         match = re.search(r"https://[a-z0-9-]+\.trycloudflare\.com", text)
         if match:
             url = match.group(0)
-            if not self.test_tunnel(url):
+            healthy, error = self.test_tunnel(url)
+            if not healthy:
                 self.tunnel_health_attempts += 1
                 if self.tunnel_health_attempts < 30 and self.tunnel_process.poll() is None:
                     self.public_url.configure(text="Cloudflare tunnel found; waiting for health check...", fg="#75807b")
                     self.window.after(2000, self.read_tunnel_url)
                 else:
-                    self.public_url.configure(text="Cloudflare tunnel found but health check failed", fg="#b83f49")
+                    self.public_url.configure(text=f"Cloudflare health check failed: {error}", fg="#b83f49", wraplength=300)
                 return
             if not self.publish_pages_redirect(url):
                 self.public_url.configure(text="Tunnel ready; GitHub Pages update failed", fg="#b83f49")
@@ -120,12 +122,23 @@ class ServerControl:
         else:
             self.public_url.configure(text="Cloudflare tunnel failed; see cloudflared.log", fg="#b83f49")
 
-    def test_tunnel(self, url: str) -> bool:
+    def test_tunnel(self, url: str) -> tuple[bool, str]:
+        if shutil.which("curl.exe"):
+            result = subprocess.run(
+                ["curl.exe", "--fail", "--silent", "--show-error", "--max-time", "10", f"{url}/api/health"],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            if result.returncode == 0 and '"status"' in result.stdout:
+                return True, ""
+            return False, result.stderr.strip() or "curl returned no healthy response"
         try:
-            with urllib.request.urlopen(f"{url}/api/health", timeout=10) as response:
-                return response.status == 200
-        except (OSError, ValueError):
-            return False
+            request = urllib.request.Request(f"{url}/api/health", headers={"User-Agent": "Shraddhanjalli-Server/1.0"})
+            with urllib.request.urlopen(request, timeout=10) as response:
+                return (response.status == 200, "") if response.status == 200 else (False, f"HTTP {response.status}")
+        except (OSError, ValueError) as error:
+            return False, str(error)
 
     def publish_pages_redirect(self, url: str) -> bool:
         page = f"""<!doctype html>
