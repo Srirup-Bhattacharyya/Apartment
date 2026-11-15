@@ -23,6 +23,7 @@ class ServerControl:
         self.window = window
         self.process: subprocess.Popen[str] | None = None
         self.tunnel_process: subprocess.Popen[str] | None = None
+        self.tunnel_health_attempts = 0
         self.button = tk.Button(
             window,
             command=self.toggle_server,
@@ -90,6 +91,7 @@ class ServerControl:
         )
         log_file.close()
         self.public_url.configure(text="Cloudflare tunnel: starting...", fg="#75807b")
+        self.tunnel_health_attempts = 0
         self.window.after(1500, self.read_tunnel_url)
 
     def read_tunnel_url(self) -> None:
@@ -100,7 +102,12 @@ class ServerControl:
         if match:
             url = match.group(0)
             if not self.test_tunnel(url):
-                self.public_url.configure(text="Cloudflare tunnel found but health check failed", fg="#b83f49")
+                self.tunnel_health_attempts += 1
+                if self.tunnel_health_attempts < 30 and self.tunnel_process.poll() is None:
+                    self.public_url.configure(text="Cloudflare tunnel found; waiting for health check...", fg="#75807b")
+                    self.window.after(2000, self.read_tunnel_url)
+                else:
+                    self.public_url.configure(text="Cloudflare tunnel found but health check failed", fg="#b83f49")
                 return
             if not self.publish_pages_redirect(url):
                 self.public_url.configure(text="Tunnel ready; GitHub Pages update failed", fg="#b83f49")
