@@ -64,6 +64,9 @@ def _start_local_service() -> tuple[bool, str]:
 def _install_database() -> str:
     system = platform.system()
     if system == "Windows" and shutil.which("winget"):
+        installed = _run(["winget", "list", "--id", "MariaDB.Server", "--exact"])
+        if installed.returncode == 0 and "MariaDB" in installed.stdout:
+            return ""
         result = _run(["winget", "install", "--id", "MariaDB.Server", "--exact", "--accept-source-agreements", "--accept-package-agreements"])
     elif system == "Darwin" and shutil.which("brew"):
         result = _run(["brew", "install", "mariadb"])
@@ -127,7 +130,7 @@ def prepare_database() -> tuple[bool, str]:
         if not _port_open() and not started:
             if start_error and "No MariaDB/MySQL Windows service was found" not in start_error:
                 return False, f"{start_error} Run this control app as Administrator if Windows denied service control."
-            if not messagebox.askyesno("MariaDB is not installed", "MariaDB was not found. Install it automatically using this computer's package manager?"):
+            if not messagebox.askyesno("MariaDB setup", "MariaDB is not running. Install or repair it automatically using this computer's package manager?"):
                 return False, "MariaDB installation was cancelled."
             error = _install_database()
             if error:
