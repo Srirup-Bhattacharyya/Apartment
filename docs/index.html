@@ -3,7 +3,7 @@
 <title>Shraddhanjalli Apartment</title></head>
 <body><p id="status">Connecting to the apartment server...</p>
 <script>
-const target = 'https://jury-feed-hwy-linear.trycloudflare.com';
+const target = 'https://halloween-composite-analog-forge.trycloudflare.com';
 const status = document.getElementById("status");
 fetch(target + "/api/health", { mode: "cors" })
   .then((response) => { if (!response.ok) throw new Error("offline"); window.location.replace(target); })
