@@ -30,7 +30,7 @@ The FastAPI backend serves the frontend and stores authentication, dues, payment
 
 The laptop is the server and must be connected to the same TP-Link Wi-Fi
 network as the phones, tablets, and computers using the website. Start FastAPI
-with the scheduled runner or manually:
+with the manual control window or directly:
 
 ```powershell
 uvicorn backend.main:app --host 0.0.0.0 --port 8000
