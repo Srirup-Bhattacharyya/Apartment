@@ -14,26 +14,15 @@ The current deployment target is a local PC using MariaDB and FastAPI. No paid h
 6. Start the app with `uvicorn backend.main:app --reload`.
 7. Open `http://127.0.0.1:8000`.
 
-## Scheduled server hours
+## Manual server control
 
-The laptop server can run only during the approved windows: 9:00 AM–4:00 PM and
-6:30 PM–3:30 AM. From an elevated PowerShell opened in the project folder, run:
+Run `python server_control.py` on the laptop. The control window has one
+button: green means the FastAPI server is running and red means it is off.
+Starting opens the website; stopping opens [offline.html](./offline.html).
+The control window must remain open while the server is running.
 
-```powershell
-Set-ExecutionPolicy -Scope Process Bypass
-.\scripts\register-server-schedule.ps1
-```
-
-The scheduled tasks start and stop only the FastAPI process using a PID file.
-Server output is written to the ignored `runtime` folder. During the offline
-period, open [offline.html](./offline.html) on the tablet to show the planned
-maintenance message; a fully stopped server cannot serve a network page.
-
-To remove the four scheduled tasks:
-
-```powershell
-.\scripts\unregister-server-schedule.ps1
-```
+A browser page cannot start a fully stopped server because no process is
+listening for the click. The control window is therefore the server switch.
 
 The FastAPI backend serves the frontend and stores authentication, dues, payments, wallets, and settings in MariaDB. Direct UPI/bank submissions remain pending until the manager checks the bank statement and approves them because this free setup has no verified payment callback. The current browser UI still uses its existing local demo storage; wiring each UI action to these API endpoints is the next integration phase.
 
@@ -55,17 +44,8 @@ the home network opens:
 http://192.168.0.105:8000
 ```
 
-Run [configure-windows-firewall.ps1](./scripts/configure-windows-firewall.ps1)
-once from an elevated PowerShell so other devices can reach port 8000:
-
-```powershell
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\configure-windows-firewall.ps1
-```
-
-The firewall rule is limited to Windows **Private** networks. Do not enable
-router port forwarding for ports 8000 or 3306. Devices outside the home Wi-Fi
-will not connect while the server is offline; access from outside should use a
-VPN rather than exposing MariaDB or FastAPI directly to the internet.
+Configure Windows Firewall separately to allow TCP port 8000 on Private
+networks. Do not enable router port forwarding for ports 8000 or 3306.
 
 ## Run it
 
