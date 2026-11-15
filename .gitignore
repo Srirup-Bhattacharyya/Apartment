@@ -7,3 +7,4 @@ supabase-config.js
 runtime/
 .vscode/
 database/
+cloudflared.log
