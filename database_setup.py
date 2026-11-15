@@ -33,19 +33,32 @@ def _run(command: list[str], *, cwd: Path = PROJECT_ROOT) -> subprocess.Complete
     return subprocess.run(command, cwd=cwd, text=True, capture_output=True, check=False)
 
 
-def _start_local_service() -> bool:
+def _start_local_service() -> tuple[bool, str]:
     system = platform.system()
     if system == "Windows":
-        for service in ("MariaDB", "MySQL", "MySQL80"):
+        services = _run(
+            [
+                "powershell.exe",
+                "-NoProfile",
+                "-Command",
+                "Get-Service | Where-Object { $_.Name -match 'MariaDB|MySQL' } | Select-Object -ExpandProperty Name",
+            ]
+        )
+        service_names = [line.strip() for line in services.stdout.splitlines() if line.strip()]
+        if not service_names:
+            return False, "No MariaDB/MySQL Windows service was found after installation."
+        errors = []
+        for service in service_names:
             result = _run(["sc.exe", "start", service])
             if result.returncode == 0 or "already been started" in result.stdout.lower():
-                return True
-        return False
+                return True, ""
+            errors.append(result.stderr.strip() or result.stdout.strip() or f"Could not start service {service}.")
+        return False, " ".join(errors)
     if system == "Darwin":
         result = _run(["brew", "services", "start", "mariadb"])
-        return result.returncode == 0
+        return result.returncode == 0, result.stderr.strip()
     result = _run(["sudo", "systemctl", "start", "mariadb"])
-    return result.returncode == 0
+    return result.returncode == 0, result.stderr.strip()
 
 
 def _install_database() -> str:
@@ -101,19 +114,27 @@ def _configure_database() -> str:
 
 def prepare_database() -> tuple[bool, str]:
     if not _port_open():
+        started = False
+        start_error = ""
         compose = shutil.which("docker")
         if compose:
             result = _run(["docker", "compose", "up", "-d", "mariadb"])
             if result.returncode != 0:
                 return False, result.stderr.strip() or "Docker could not start MariaDB."
-        elif not _start_local_service():
+            started = True
+        else:
+            started, start_error = _start_local_service()
+        if not _port_open() and not started:
+            if start_error and "No MariaDB/MySQL Windows service was found" not in start_error:
+                return False, f"{start_error} Run this control app as Administrator if Windows denied service control."
             if not messagebox.askyesno("MariaDB is not installed", "MariaDB was not found. Install it automatically using this computer's package manager?"):
                 return False, "MariaDB installation was cancelled."
             error = _install_database()
             if error:
                 return False, error
-            if not _start_local_service():
-                return False, "MariaDB was installed, but its service could not be started."
+            started, start_error = _start_local_service()
+            if not started:
+                return False, start_error or "MariaDB was installed, but its service could not be started. Run this control app as Administrator."
         deadline = time.monotonic() + 30
         while time.monotonic() < deadline and not _port_open():
             time.sleep(1)
