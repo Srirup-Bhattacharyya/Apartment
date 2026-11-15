@@ -48,7 +48,15 @@ class ServerControl:
 
     def find_cloudflared(self) -> str | None:
         command = subprocess.run(["where.exe", "cloudflared"], capture_output=True, text=True, check=False)
-        return command.stdout.splitlines()[0].strip() if command.returncode == 0 and command.stdout.strip() else None
+        if command.returncode == 0 and command.stdout.strip():
+            return command.stdout.splitlines()[0].strip()
+        local_app_data = os.environ.get("LOCALAPPDATA")
+        if local_app_data:
+            packages = Path(local_app_data) / "Microsoft" / "WinGet" / "Packages"
+            matches = list(packages.glob("Cloudflare.cloudflared*/*/cloudflared.exe"))
+            if matches:
+                return str(matches[0])
+        return None
 
     def install_cloudflared(self) -> str | None:
         if not messagebox.askyesno("Cloudflare Tunnel", "cloudflared is not installed. Install the free Cloudflare tunnel tool with winget?"):
