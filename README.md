@@ -40,7 +40,7 @@ to the local FastAPI server. It displays a temporary HTTPS URL ending in
 changes when the tunnel restarts, and the laptop and controller must remain
 running. No router port forwarding or paid domain is required.
 
-The FastAPI backend serves the frontend and stores authentication, dues, payments, wallets, and settings in MariaDB. Direct UPI/bank submissions remain pending until the manager checks the bank statement and approves them because this free setup has no verified payment callback. The current browser UI still uses its existing local demo storage; wiring each UI action to these API endpoints is the next integration phase.
+The FastAPI backend serves the frontend and MariaDB is the system of record. Login, dues, wallets, monthly billing, additional costs, payments, pending approvals, receipts, and settings are loaded from and saved to the authenticated API. Browser storage is only a local cache; it is not the authoritative data source. Direct UPI/bank submissions remain pending until the manager checks the bank statement and approves them because this free setup has no verified payment callback.
 
 ## Access from multiple home devices
 
@@ -88,11 +88,11 @@ Initial accounts:
 - Resident-facing Pay dues action using wallet funds
 - Direct UPI/bank-reference submissions with manager approval
 - Configurable apartment UPI ID and UPI-app payment link
-- Browser persistence using `localStorage`
+- MariaDB-backed persistence through the FastAPI API
 
 The current ledger has six residents, a ₹460 monthly fee, November 2026 as the operating month, and the confirmed dues. Resident wallets start at ₹0 and the manager wallet starts at ₹50,000. The app uses a new storage version so this clean starting state loads in the browser.
 
-This version is a front-end prototype. Data is stored only in the current browser; a production deployment should replace `localStorage` with a secure server/database, hash passwords, and connect wallet top-ups to a verified payment provider.
+The browser UI requires the FastAPI server for login and database access. MariaDB stores the application state, while password credentials are stored as Argon2 hashes in the users table. If the API is unavailable, the UI reports the connection error instead of silently treating browser data as the live apartment account.
 
 Residents sign in, open **Pay dues**, enter a full or partial amount, and choose Wallet, UPI, or Bank transfer. UPI and bank transfer are currently recorded with a payment reference for manager verification; no apartment convenience/platform fee is added. A bank or UPI provider may still apply its own external charges, which the apartment system cannot guarantee or control. A verified payment gateway should be connected before production use.
 

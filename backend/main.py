@@ -9,9 +9,9 @@ from sqlalchemy.orm import Session
 
 from .config import get_settings
 from .db import Base, engine, get_db
-from .models import Payment, PaymentMethod, PaymentStatus, Role, Settings, User
-from .schemas import LoginRequest, PaymentCreate, PaymentResponse, SettingsResponse, SettingsUpdate, TokenResponse, UserResponse
-from .security import create_token, read_token, verify_password
+from .models import ApplicationState, Payment, PaymentMethod, PaymentStatus, Role, Settings, User
+from .schemas import LoginRequest, PasswordChange, PasswordReset, PaymentCreate, PaymentResponse, SettingsResponse, SettingsUpdate, TokenResponse, UserResponse
+from .security import create_token, hash_password, read_token, verify_password
 
 settings = get_settings()
 Base.metadata.create_all(bind=engine)
@@ -51,6 +51,146 @@ def health() -> dict[str, str]:
     return {"status": "ok"}
 
 
+def build_application_state(db: Session) -> dict:
+    settings_row = db.get(Settings, 1)
+    manager = db.scalar(select(User).where(User.role == Role.MANAGER))
+    members = list(db.scalars(select(User).where(User.role == Role.MEMBER).order_by(User.name)))
+    payments = list(db.scalars(select(Payment).order_by(Payment.created_at)))
+    stored = db.get(ApplicationState, 1)
+    payload = dict(stored.payload) if stored else {}
+    payload["settings"] = {
+        "monthlyFee": settings_row.monthly_fee if settings_row else 460,
+        "apartmentName": settings_row.apartment_name if settings_row else "Shraddhanjalli Apartment",
+        "billingMonth": settings_row.billing_month if settings_row else "November 2026",
+        "upiId": settings_row.upi_id if settings_row else "",
+        "additionalCosts": payload.get("settings", {}).get("additionalCosts", []),
+    }
+    if manager:
+        payload["manager"] = {
+            "id": manager.id,
+            "name": manager.name,
+            "username": manager.username,
+            "role": manager.role,
+            "wallet": manager.wallet_balance,
+        }
+    payload["members"] = [
+        {
+            "id": member.id,
+            "name": member.name,
+            "unit": "",
+            "username": member.username,
+            "phone": "",
+            "due": member.outstanding_due,
+            "wallet": member.wallet_balance,
+        }
+        for member in members
+    ]
+    database_payments = [
+        {
+            "id": payment.id,
+            "memberId": payment.member_id,
+            "amount": payment.amount,
+            "method": payment.method,
+            "date": payment.created_at.isoformat(),
+            "note": payment.reference,
+            "receiptNo": payment.receipt_no,
+        }
+        for payment in payments
+        if payment.status == PaymentStatus.APPROVED.value
+    ]
+    database_pending_payments = [
+        {
+            "id": payment.id,
+            "memberId": payment.member_id,
+            "amount": payment.amount,
+            "method": payment.method,
+            "date": payment.created_at.isoformat(),
+            "note": payment.reference,
+        }
+        for payment in payments
+        if payment.status == PaymentStatus.PENDING.value
+    ]
+    payload["payments"] = payload.get("payments", database_payments)
+    payload["pendingPayments"] = payload.get("pendingPayments", database_pending_payments)
+    payload.setdefault("walletTransactions", [])
+    payload.setdefault("receipts", [])
+    return payload
+
+
+@app.get("/api/state")
+def read_application_state(_: User = Depends(current_user), db: Session = Depends(get_db)) -> dict:
+    return build_application_state(db)
+
+
+@app.put("/api/state")
+def update_application_state(payload: dict, user: User = Depends(current_user), db: Session = Depends(get_db)) -> dict:
+    current_payload = build_application_state(db)
+    if user.role != Role.MANAGER:
+        incoming_members = payload.get("members", [])
+        incoming_member = next((item for item in incoming_members if item.get("id") == user.id), None)
+        current_member = next((item for item in current_payload["members"] if item.get("id") == user.id), None)
+        if not incoming_member or not current_member:
+            raise HTTPException(status_code=403, detail="Only your own account state can be updated")
+        if payload.get("settings") != current_payload["settings"] or payload.get("manager") != current_payload["manager"]:
+            raise HTTPException(status_code=403, detail="Manager settings cannot be changed by a resident")
+        for item in incoming_members:
+            if item.get("id") != user.id:
+                matching = next((current for current in current_payload["members"] if current.get("id") == item.get("id")), None)
+                if item != matching:
+                    raise HTTPException(status_code=403, detail="Another resident account cannot be changed")
+        for key in ("payments", "pendingPayments"):
+            current_items = {item.get("id"): item for item in current_payload.get(key, [])}
+            for item in payload.get(key, []):
+                if item.get("id") in current_items:
+                    if item != current_items[item.get("id")]:
+                        raise HTTPException(status_code=403, detail="Existing payment records cannot be changed")
+                elif item.get("memberId") != user.id:
+                    raise HTTPException(status_code=403, detail="A resident can only add their own payment records")
+        new_payments = [
+            item for item in payload.get("payments", [])
+            if item.get("id") not in {current.get("id") for current in current_payload.get("payments", [])}
+        ]
+        approved_amount = sum(int(item.get("amount", 0)) for item in new_payments)
+        due_reduction = int(current_member["due"]) - int(incoming_member.get("due", current_member["due"]))
+        wallet_reduction = int(current_member["wallet"]) - int(incoming_member.get("wallet", current_member["wallet"]))
+        wallet_payment_amount = sum(
+            int(item.get("amount", 0)) for item in new_payments if item.get("method") == PaymentMethod.WALLET.value
+        )
+        if due_reduction != approved_amount or wallet_reduction != wallet_payment_amount:
+            raise HTTPException(status_code=400, detail="Resident payment changes do not match the balance changes")
+        payload = dict(payload)
+        payload["settings"] = current_payload["settings"]
+        payload["manager"] = current_payload["manager"]
+        payload["members"] = [
+            incoming_member if item.get("id") == user.id else item
+            for item in current_payload["members"]
+        ]
+    settings_payload = payload.get("settings", {})
+    settings_row = db.get(Settings, 1) or Settings(id=1)
+    settings_row.monthly_fee = int(settings_payload.get("monthlyFee", settings_row.monthly_fee))
+    settings_row.billing_month = str(settings_payload.get("billingMonth", settings_row.billing_month))
+    settings_row.apartment_name = str(settings_payload.get("apartmentName", settings_row.apartment_name))
+    settings_row.upi_id = str(settings_payload.get("upiId", settings_row.upi_id)).strip()
+    db.add(settings_row)
+    for member_payload in payload.get("members", []):
+        member = db.get(User, member_payload.get("id"))
+        if member and member.role == Role.MEMBER:
+            member.outstanding_due = int(member_payload.get("due", member.outstanding_due))
+            member.wallet_balance = int(member_payload.get("wallet", member.wallet_balance))
+    manager_payload = payload.get("manager", {})
+    manager = db.scalar(select(User).where(User.role == Role.MANAGER))
+    if manager and "wallet" in manager_payload:
+        manager.wallet_balance = int(manager_payload["wallet"])
+    safe_payload = dict(payload)
+    safe_payload.pop("manager", None)
+    safe_payload.pop("members", None)
+    state_row = db.get(ApplicationState, 1) or ApplicationState(id=1)
+    state_row.payload = safe_payload
+    db.add(state_row)
+    db.commit()
+    return build_application_state(db)
+
+
 @app.post("/api/auth/login", response_model=TokenResponse)
 def login(payload: LoginRequest, db: Session = Depends(get_db)) -> TokenResponse:
     user = db.scalar(select(User).where(User.username == payload.username))
@@ -62,6 +202,25 @@ def login(payload: LoginRequest, db: Session = Depends(get_db)) -> TokenResponse
 @app.get("/api/me", response_model=UserResponse)
 def me(user: User = Depends(current_user)) -> User:
     return user
+
+
+@app.post("/api/auth/change-password")
+def change_password(payload: PasswordChange, user: User = Depends(current_user), db: Session = Depends(get_db)) -> dict[str, str]:
+    if not verify_password(payload.current_password, user.password_hash):
+        raise HTTPException(status_code=400, detail="Current password is incorrect")
+    user.password_hash = hash_password(payload.new_password)
+    db.commit()
+    return {"status": "ok"}
+
+
+@app.post("/api/auth/reset-password")
+def reset_password(payload: PasswordReset, _: User = Depends(manager_only), db: Session = Depends(get_db)) -> dict[str, str]:
+    member = db.get(User, payload.member_id)
+    if not member or member.role != Role.MEMBER:
+        raise HTTPException(status_code=404, detail="Resident account not found")
+    member.password_hash = hash_password(payload.new_password)
+    db.commit()
+    return {"status": "ok"}
 
 
 @app.get("/api/members", response_model=list[UserResponse])
