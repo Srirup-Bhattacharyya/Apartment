@@ -73,13 +73,18 @@ def build_application_state(db: Session) -> dict:
             "role": manager.role,
             "wallet": manager.wallet_balance,
         }
+    stored_members = {
+        item.get("id"): item
+        for item in payload.get("members", [])
+        if isinstance(item, dict) and item.get("id")
+    }
     payload["members"] = [
         {
             "id": member.id,
             "name": member.name,
-            "unit": "",
+            "unit": stored_members.get(member.id, {}).get("unit", ""),
             "username": member.username,
-            "phone": "",
+            "phone": stored_members.get(member.id, {}).get("phone", ""),
             "due": member.outstanding_due,
             "wallet": member.wallet_balance,
         }
@@ -110,8 +115,8 @@ def build_application_state(db: Session) -> dict:
         for payment in payments
         if payment.status == PaymentStatus.PENDING.value
     ]
-    payload["payments"] = payload.get("payments", database_payments)
-    payload["pendingPayments"] = payload.get("pendingPayments", database_pending_payments)
+    payload["payments"] = payload.get("payments") or database_payments
+    payload["pendingPayments"] = payload.get("pendingPayments") or database_pending_payments
     payload.setdefault("walletTransactions", [])
     payload.setdefault("receipts", [])
     return payload
@@ -172,18 +177,40 @@ def update_application_state(payload: dict, user: User = Depends(current_user), 
     settings_row.apartment_name = str(settings_payload.get("apartmentName", settings_row.apartment_name))
     settings_row.upi_id = str(settings_payload.get("upiId", settings_row.upi_id)).strip()
     db.add(settings_row)
+    stored_members = []
     for member_payload in payload.get("members", []):
         member = db.get(User, member_payload.get("id"))
-        if member and member.role == Role.MEMBER:
+        if not member:
+            username = str(member_payload.get("username", "")).strip()
+            password = str(member_payload.get("password", "")).strip()
+            if not username or not password:
+                raise HTTPException(status_code=400, detail="New members require a username and password")
+            if db.scalar(select(User).where(User.username == username)):
+                raise HTTPException(status_code=409, detail=f"Username already exists: {username}")
+            member = User(
+                id=str(member_payload.get("id") or ""),
+                name=str(member_payload.get("name", "")).strip(),
+                username=username,
+                password_hash=hash_password(password),
+                role=Role.MEMBER,
+                outstanding_due=int(member_payload.get("due", 0)),
+                wallet_balance=int(member_payload.get("wallet", 0)),
+            )
+            db.add(member)
+        elif member.role == Role.MEMBER:
+            member.name = str(member_payload.get("name", member.name)).strip()
             member.outstanding_due = int(member_payload.get("due", member.outstanding_due))
             member.wallet_balance = int(member_payload.get("wallet", member.wallet_balance))
+        clean_member = dict(member_payload)
+        clean_member.pop("password", None)
+        stored_members.append(clean_member)
     manager_payload = payload.get("manager", {})
     manager = db.scalar(select(User).where(User.role == Role.MANAGER))
     if manager and "wallet" in manager_payload:
         manager.wallet_balance = int(manager_payload["wallet"])
     safe_payload = dict(payload)
+    safe_payload["members"] = stored_members
     safe_payload.pop("manager", None)
-    safe_payload.pop("members", None)
     state_row = db.get(ApplicationState, 1) or ApplicationState(id=1)
     state_row.payload = safe_payload
     db.add(state_row)
