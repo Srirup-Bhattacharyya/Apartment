@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 
 from .config import get_settings
 from .db import Base, engine, get_db
-from .models import ApplicationState, Payment, PaymentMethod, PaymentStatus, Role, Settings, User
+from .models import AdditionalCost, ApplicationState, Payment, PaymentMethod, PaymentStatus, Receipt, Role, Settings, User, WalletTransaction
 from .schemas import LoginRequest, PasswordChange, PasswordReset, PaymentCreate, PaymentResponse, SettingsResponse, SettingsUpdate, TokenResponse, UserResponse
 from .security import create_token, hash_password, read_token, verify_password
 
@@ -52,18 +52,68 @@ def health() -> dict[str, str]:
 
 
 def build_application_state(db: Session) -> dict:
+    apply_server_billing(db)
     settings_row = db.get(Settings, 1)
     manager = db.scalar(select(User).where(User.role == Role.MANAGER))
     members = list(db.scalars(select(User).where(User.role == Role.MEMBER).order_by(User.name)))
     payments = list(db.scalars(select(Payment).order_by(Payment.created_at)))
     stored = db.get(ApplicationState, 1)
     payload = dict(stored.payload) if stored else {}
+    if stored:
+        existing_cost_ids = {item.id for item in db.scalars(select(AdditionalCost))}
+        for item in payload.get("settings", {}).get("additionalCosts", []):
+            if item.get("id") not in existing_cost_ids:
+                db.add(AdditionalCost(
+                    id=str(item["id"]),
+                    amount=int(item.get("amount", 0)),
+                    description=str(item.get("description", "")),
+                    month_key=str(item.get("monthKey", "")),
+                    applied=bool(item.get("applied", False)),
+                ))
+        existing_payment_ids = {item.id for item in db.scalars(select(Payment))}
+        pending_ids = {item.get("id") for item in payload.get("pendingPayments", [])}
+        for item in payload.get("payments", []) + payload.get("pendingPayments", []):
+            if item.get("id") in existing_payment_ids:
+                continue
+            db.add(Payment(
+                id=str(item["id"]),
+                member_id=str(item["memberId"]),
+                amount=int(item.get("amount", 0)),
+                method=str(item.get("method", "")).lower().replace(" ", "_"),
+                reference=str(item.get("note", "")),
+                status=PaymentStatus.PENDING.value if item.get("id") in pending_ids else PaymentStatus.APPROVED.value,
+                receipt_no=item.get("receiptNo") if item.get("id") not in pending_ids else None,
+            ))
+        existing_wallet_ids = {item.id for item in db.scalars(select(WalletTransaction))}
+        for item in payload.get("walletTransactions", []):
+            if item.get("id") not in existing_wallet_ids:
+                db.add(WalletTransaction(
+                    id=str(item["id"]),
+                    member_id=str(item["memberId"]),
+                    amount=int(item.get("amount", 0)),
+                    transaction_type=str(item.get("type", "credit")),
+                    note=str(item.get("note", "")),
+                ))
+        db.commit()
+        for item in payload.get("payments", []):
+            if item.get("receiptNo") and not db.scalar(select(Receipt).where(Receipt.payment_id == item.get("id"))):
+                db.add(Receipt(id=f"receipt-{item['id']}", payment_id=item["id"], receipt_no=item["receiptNo"]))
+        db.commit()
     payload["settings"] = {
         "monthlyFee": settings_row.monthly_fee if settings_row else 460,
         "apartmentName": settings_row.apartment_name if settings_row else "Shraddhanjalli Apartment",
         "billingMonth": settings_row.billing_month if settings_row else "November 2026",
         "upiId": settings_row.upi_id if settings_row else "",
-        "additionalCosts": payload.get("settings", {}).get("additionalCosts", []),
+        "additionalCosts": [
+            {
+                "id": item.id,
+                "amount": item.amount,
+                "description": item.description,
+                "monthKey": item.month_key,
+                "applied": item.applied,
+            }
+            for item in db.scalars(select(AdditionalCost).order_by(AdditionalCost.month_key, AdditionalCost.id))
+        ],
     }
     if manager:
         payload["manager"] = {
@@ -115,11 +165,59 @@ def build_application_state(db: Session) -> dict:
         for payment in payments
         if payment.status == PaymentStatus.PENDING.value
     ]
-    payload["payments"] = payload.get("payments") or database_payments
-    payload["pendingPayments"] = payload.get("pendingPayments") or database_pending_payments
-    payload.setdefault("walletTransactions", [])
+    payload["payments"] = database_payments
+    payload["pendingPayments"] = database_pending_payments
+    payload["walletTransactions"] = [
+        {
+            "id": item.id,
+            "memberId": item.member_id,
+            "amount": item.amount,
+            "type": item.transaction_type,
+            "note": item.note,
+            "date": item.created_at.isoformat(),
+        }
+        for item in db.scalars(select(WalletTransaction).order_by(WalletTransaction.created_at))
+    ]
     payload.setdefault("receipts", [])
     return payload
+
+
+def month_number(label: str) -> int | None:
+    try:
+        month_name, year = label.split()
+        month = datetime.strptime(month_name, "%B").month - 1
+        return int(year) * 12 + month
+    except (ValueError, IndexError):
+        return None
+
+
+def month_label(value: int) -> str:
+    year, month = divmod(value, 12)
+    return f"{datetime(year, month + 1, 1):%B} {year}"
+
+
+def apply_server_billing(db: Session) -> None:
+    settings_row = db.get(Settings, 1)
+    if not settings_row:
+        return
+    current = datetime.utcnow()
+    current_number = current.year * 12 + current.month - 1
+    billed_number = month_number(settings_row.billing_month)
+    if billed_number is None or current_number <= billed_number:
+        return
+    fee = settings_row.monthly_fee
+    costs = list(db.scalars(select(AdditionalCost).where(AdditionalCost.applied.is_(False))))
+    members = list(db.scalars(select(User).where(User.role == Role.MEMBER)))
+    for number in range(billed_number + 1, current_number + 1):
+        month_key = f"{number // 12:04d}-{number % 12 + 1:02d}"
+        extra = sum(item.amount for item in costs if item.month_key == month_key)
+        for member in members:
+            member.outstanding_due += fee + extra
+        for item in costs:
+            if item.month_key == month_key:
+                item.applied = True
+    settings_row.billing_month = month_label(current_number)
+    db.commit()
 
 
 @app.get("/api/state")
@@ -208,6 +306,46 @@ def update_application_state(payload: dict, user: User = Depends(current_user), 
     manager = db.scalar(select(User).where(User.role == Role.MANAGER))
     if manager and "wallet" in manager_payload:
         manager.wallet_balance = int(manager_payload["wallet"])
+    incoming_cost_ids = {str(item.get("id")) for item in settings_payload.get("additionalCosts", [])}
+    for item in db.scalars(select(AdditionalCost)):
+        if item.id not in incoming_cost_ids and not item.applied:
+            db.delete(item)
+    for item_payload in settings_payload.get("additionalCosts", []):
+        item = db.get(AdditionalCost, item_payload.get("id"))
+        if not item:
+            item = AdditionalCost(id=str(item_payload["id"]))
+        item.amount = int(item_payload.get("amount", 0))
+        item.description = str(item_payload.get("description", "")).strip()
+        item.month_key = str(item_payload.get("monthKey", ""))
+        item.applied = bool(item_payload.get("applied", False))
+        db.add(item)
+    for item_payload in payload.get("walletTransactions", []):
+        if not item_payload.get("id") or db.get(WalletTransaction, item_payload["id"]):
+            continue
+        db.add(WalletTransaction(
+            id=str(item_payload["id"]),
+            member_id=str(item_payload["memberId"]),
+            amount=int(item_payload.get("amount", 0)),
+            transaction_type=str(item_payload.get("type", "credit")),
+            note=str(item_payload.get("note", "")),
+        ))
+    for item_payload in payload.get("payments", []) + payload.get("pendingPayments", []):
+        payment_id = item_payload.get("id")
+        if not payment_id or db.get(Payment, payment_id):
+            continue
+        status_value = PaymentStatus.PENDING.value if item_payload in payload.get("pendingPayments", []) else PaymentStatus.APPROVED.value
+        payment = Payment(
+            id=str(payment_id),
+            member_id=str(item_payload["memberId"]),
+            amount=int(item_payload.get("amount", 0)),
+            method=str(item_payload.get("method", "")).lower().replace(" ", "_"),
+            reference=str(item_payload.get("note", "")),
+            status=status_value,
+            receipt_no=item_payload.get("receiptNo") if status_value == PaymentStatus.APPROVED.value else None,
+        )
+        db.add(payment)
+        if payment.receipt_no:
+            db.add(Receipt(id=f"receipt-{payment.id}", payment_id=payment.id, receipt_no=payment.receipt_no))
     safe_payload = dict(payload)
     safe_payload["members"] = stored_members
     safe_payload.pop("manager", None)

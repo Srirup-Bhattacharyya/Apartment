@@ -71,3 +71,33 @@ class ApplicationState(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, default=1)
     payload: Mapped[dict] = mapped_column(JSON, default=dict)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class AdditionalCost(Base):
+    __tablename__ = "additional_costs"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    amount: Mapped[int] = mapped_column(Integer)
+    description: Mapped[str] = mapped_column(String(255))
+    month_key: Mapped[str] = mapped_column(String(7), index=True)
+    applied: Mapped[bool] = mapped_column(default=False)
+
+
+class WalletTransaction(Base):
+    __tablename__ = "wallet_transactions"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    member_id: Mapped[str] = mapped_column(ForeignKey("users.id"), index=True)
+    amount: Mapped[int] = mapped_column(Integer)
+    transaction_type: Mapped[str] = mapped_column(String(20))
+    note: Mapped[str] = mapped_column(String(255), default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class Receipt(Base):
+    __tablename__ = "receipts"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    payment_id: Mapped[str] = mapped_column(ForeignKey("payments.id"), unique=True)
+    receipt_no: Mapped[str] = mapped_column(String(40), unique=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
