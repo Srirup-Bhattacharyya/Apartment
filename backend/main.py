@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 
 from .config import get_settings
 from .db import Base, engine, get_db
-from .models import AdditionalCost, ApplicationState, Payment, PaymentMethod, PaymentStatus, Receipt, Role, Settings, User, WalletTransaction
+from .models import AdditionalCost, ApplicationState, Payment, PaymentMethod, PaymentStatus, PendingWalletTopUp, Receipt, Role, Settings, User, WalletTransaction
 from .schemas import LoginRequest, PasswordChange, PasswordReset, PaymentCreate, PaymentResponse, SettingsResponse, SettingsUpdate, TokenResponse, UserResponse
 from .security import create_token, hash_password, read_token, verify_password
 
@@ -179,6 +179,16 @@ def build_application_state(db: Session) -> dict:
         for item in db.scalars(select(WalletTransaction).order_by(WalletTransaction.created_at))
     ]
     payload.setdefault("receipts", [])
+    payload["pendingWalletTopUps"] = [
+        {
+            "id": item.id,
+            "memberId": item.member_id,
+            "amount": item.amount,
+            "upiReference": item.upi_reference,
+            "date": item.created_at.isoformat(),
+        }
+        for item in db.scalars(select(PendingWalletTopUp).order_by(PendingWalletTopUp.created_at))
+    ]
     return payload
 
 
@@ -249,6 +259,13 @@ def update_application_state(payload: dict, user: User = Depends(current_user), 
                         raise HTTPException(status_code=403, detail="Existing payment records cannot be changed")
                 elif item.get("memberId") != user.id:
                     raise HTTPException(status_code=403, detail="A resident can only add their own payment records")
+        current_topups = {item.get("id"): item for item in current_payload.get("pendingWalletTopUps", [])}
+        for item in payload.get("pendingWalletTopUps", []):
+            if item.get("id") in current_topups:
+                if item != current_topups[item.get("id")]:
+                    raise HTTPException(status_code=403, detail="Existing wallet top-up requests cannot be changed")
+            elif item.get("memberId") != user.id:
+                raise HTTPException(status_code=403, detail="A resident can only add their own wallet top-up requests")
         new_payments = [
             item for item in payload.get("payments", [])
             if item.get("id") not in {current.get("id") for current in current_payload.get("payments", [])}
@@ -353,6 +370,19 @@ def update_application_state(payload: dict, user: User = Depends(current_user), 
             amount=int(item_payload.get("amount", 0)),
             transaction_type=str(item_payload.get("type", "credit")),
             note=str(item_payload.get("note", "")),
+        ))
+    incoming_topups = {str(item.get("id")) for item in payload.get("pendingWalletTopUps", [])}
+    for item in db.scalars(select(PendingWalletTopUp)):
+        if item.id not in incoming_topups:
+            db.delete(item)
+    for item_payload in payload.get("pendingWalletTopUps", []):
+        if not item_payload.get("id") or db.get(PendingWalletTopUp, item_payload["id"]):
+            continue
+        db.add(PendingWalletTopUp(
+            id=str(item_payload["id"]),
+            member_id=str(item_payload["memberId"]),
+            amount=int(item_payload.get("amount", 0)),
+            upi_reference=str(item_payload.get("upiReference", "")),
         ))
     for item_payload in payload.get("payments", []) + payload.get("pendingPayments", []):
         payment_id = item_payload.get("id")

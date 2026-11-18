@@ -101,3 +101,13 @@ class Receipt(Base):
     payment_id: Mapped[str] = mapped_column(ForeignKey("payments.id"), unique=True)
     receipt_no: Mapped[str] = mapped_column(String(40), unique=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class PendingWalletTopUp(Base):
+    __tablename__ = "pending_wallet_topups"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    member_id: Mapped[str] = mapped_column(ForeignKey("users.id"), index=True)
+    amount: Mapped[int] = mapped_column(Integer)
+    upi_reference: Mapped[str] = mapped_column(String(180))
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
