@@ -42,7 +42,6 @@ class UserResponse(BaseModel):
     name: str
     username: str
     role: str
-    wallet_balance: int
     outstanding_due: int
 
 

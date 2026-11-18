@@ -40,7 +40,7 @@ to the local FastAPI server. It displays a temporary HTTPS URL ending in
 changes when the tunnel restarts, and the laptop and controller must remain
 running. No router port forwarding or paid domain is required.
 
-The FastAPI backend serves the frontend and MariaDB is the system of record. Login, dues, wallets, monthly billing, additional costs, payments, pending approvals, receipts, and settings are loaded from and saved to the authenticated API. Browser storage is only a local cache; it is not the authoritative data source. Direct UPI/bank submissions remain pending until the manager checks the bank statement and approves them because this free setup has no verified payment callback.
+The The FastAPI backend serves the frontend and MariaDB is the system of record. Login, dues, monthly billing, additional costs, payments, pending approvals, receipts, and settings are loaded from and saved to the authenticated API. Browser storage is only a local cache; it is not the authoritative data source. Direct UPI/bank submissions remain pending until the manager checks the bank statement and approves them because this free setup has no verified payment callback.
 
 ## Access from multiple home devices
 
@@ -78,22 +78,25 @@ Initial accounts:
 - Member/unit directory with usernames and temporary passwords
 - Monthly billing that adds the configured fee to each outstanding balance
 - Carry-forward balances for late or partial payments
-- Cash, bank transfer, UPI, and wallet payment methods
-- Per-resident wallet balances and wallet top-ups
+- Cash, bank transfer, and UPI payment methods
 - Payment history and remaining-balance visibility
 - Printable/downloadable payment receipts
 - Self-service password changes in Settings
 - Manager-controlled resident password resets in Settings
 - Paper-style maintenance ledger printing from manager Settings
-- Resident-facing Pay dues action using wallet funds
+- Resident-facing Pay dues action
 - Direct UPI/bank-reference submissions with manager approval
 - Configurable apartment UPI ID and UPI-app payment link
 - MariaDB-backed persistence through the FastAPI API
 
-The current ledger has six residents, a ₹460 monthly fee, November 2026 as the operating month, and the confirmed dues. Resident wallets start at ₹0 and the manager wallet starts at ₹50,000. The app uses a new storage version so this clean starting state loads in the browser.
+The current ledger has six residents, a ₹460 monthly fee, November 2026 as the operating month, and the confirmed dues. The app uses a new storage version so this clean starting state loads in the browser.
 
 The browser UI requires the FastAPI server for login and database access. MariaDB stores the application state, while password credentials are stored as Argon2 hashes in the users table. If the API is unavailable, the UI reports the connection error instead of silently treating browser data as the live apartment account.
 
-Residents sign in, open **Pay dues**, enter a full or partial amount, and choose Wallet, UPI, or Bank transfer. UPI and bank transfer are currently recorded with a payment reference for manager verification; no apartment convenience/platform fee is added. A bank or UPI provider may still apply its own external charges, which the apartment system cannot guarantee or control. A verified payment gateway should be connected before production use.
+Residents sign in, open **Pay dues**, enter a full or partial amount, and choose UPI or Bank transfer. UPI and bank transfer are currently recorded with a payment reference for manager verification; no apartment convenience/platform fee is added. A bank or UPI provider may still apply its own external charges, which the apartment system cannot guarantee or control. A verified payment gateway should be connected before production use.
 
 For direct UPI/bank payments, the manager first saves the apartment's public UPI ID in Settings. A resident can open the UPI app link, pay externally, enter the UTR/reference, and submit it. The item appears under **Payments awaiting approval**; the manager approves it after checking the bank/UPI notification, and only then is the resident's due reduced.
+
+The removed wallet feature is not migrated or destructively deleted. Legacy MariaDB
+tables and columns for wallet balances or wallet transactions may remain unused
+in existing databases; the application no longer creates, reads, or updates them.

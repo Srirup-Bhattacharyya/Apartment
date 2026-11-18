@@ -20,7 +20,6 @@ def seed() -> None:
     with SessionLocal.begin() as db:
         if db.scalar(select(User).where(User.username == "Manager")):
             return
-        db.add(User(name="Sudip Bhattacharyya", username="Manager", password_hash=hash_password("Manager@2026"), role=Role.MANAGER, wallet_balance=50000))
         db.add_all(
             User(name=name, username=username, password_hash=hash_password("welcome1"), role=Role.MEMBER, outstanding_due=due)
             for name, username, due in MEMBERS

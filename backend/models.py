@@ -15,7 +15,6 @@ class Role(StrEnum):
 
 
 class PaymentMethod(StrEnum):
-    WALLET = "wallet"
     UPI = "upi"
     BANK_TRANSFER = "bank_transfer"
     CASH = "cash"
@@ -35,7 +34,6 @@ class User(Base):
     username: Mapped[str] = mapped_column(String(80), unique=True, index=True)
     password_hash: Mapped[str] = mapped_column(String(255))
     role: Mapped[str] = mapped_column(String(20), default=Role.MEMBER)
-    wallet_balance: Mapped[int] = mapped_column(Integer, default=0)
     outstanding_due: Mapped[int] = mapped_column(Integer, default=0)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
@@ -83,31 +81,10 @@ class AdditionalCost(Base):
     applied: Mapped[bool] = mapped_column(default=False)
 
 
-class WalletTransaction(Base):
-    __tablename__ = "wallet_transactions"
-
-    id: Mapped[str] = mapped_column(String(36), primary_key=True)
-    member_id: Mapped[str] = mapped_column(ForeignKey("users.id"), index=True)
-    amount: Mapped[int] = mapped_column(Integer)
-    transaction_type: Mapped[str] = mapped_column(String(20))
-    note: Mapped[str] = mapped_column(String(255), default="")
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
-
-
 class Receipt(Base):
     __tablename__ = "receipts"
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
     payment_id: Mapped[str] = mapped_column(ForeignKey("payments.id"), unique=True)
     receipt_no: Mapped[str] = mapped_column(String(40), unique=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
-
-
-class PendingWalletTopUp(Base):
-    __tablename__ = "pending_wallet_topups"
-
-    id: Mapped[str] = mapped_column(String(36), primary_key=True)
-    member_id: Mapped[str] = mapped_column(ForeignKey("users.id"), index=True)
-    amount: Mapped[int] = mapped_column(Integer)
-    upi_reference: Mapped[str] = mapped_column(String(180))
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)

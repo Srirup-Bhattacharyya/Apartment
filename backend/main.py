@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 
 from .config import get_settings
 from .db import Base, engine, get_db
-from .models import AdditionalCost, ApplicationState, Payment, PaymentMethod, PaymentStatus, PendingWalletTopUp, Receipt, Role, Settings, User, WalletTransaction
+from .models import AdditionalCost, ApplicationState, Payment, PaymentMethod, PaymentStatus, Receipt, Role, Settings, User
 from .schemas import LoginRequest, PasswordChange, PasswordReset, PaymentCreate, PaymentResponse, SettingsResponse, SettingsUpdate, TokenResponse, UserResponse
 from .security import create_token, hash_password, read_token, verify_password
 
@@ -84,16 +84,6 @@ def build_application_state(db: Session) -> dict:
                 status=PaymentStatus.PENDING.value if item.get("id") in pending_ids else PaymentStatus.APPROVED.value,
                 receipt_no=item.get("receiptNo") if item.get("id") not in pending_ids else None,
             ))
-        existing_wallet_ids = {item.id for item in db.scalars(select(WalletTransaction))}
-        for item in payload.get("walletTransactions", []):
-            if item.get("id") not in existing_wallet_ids:
-                db.add(WalletTransaction(
-                    id=str(item["id"]),
-                    member_id=str(item["memberId"]),
-                    amount=int(item.get("amount", 0)),
-                    transaction_type=str(item.get("type", "credit")),
-                    note=str(item.get("note", "")),
-                ))
         db.commit()
         for item in payload.get("payments", []):
             if item.get("receiptNo") and not db.scalar(select(Receipt).where(Receipt.payment_id == item.get("id"))):
@@ -121,7 +111,6 @@ def build_application_state(db: Session) -> dict:
             "name": manager.name,
             "username": manager.username,
             "role": manager.role,
-            "wallet": manager.wallet_balance,
         }
     stored_members = {
         item.get("id"): item
@@ -136,7 +125,6 @@ def build_application_state(db: Session) -> dict:
             "username": member.username,
             "phone": stored_members.get(member.id, {}).get("phone", ""),
             "due": member.outstanding_due,
-            "wallet": member.wallet_balance,
         }
         for member in members
     ]
@@ -167,28 +155,7 @@ def build_application_state(db: Session) -> dict:
     ]
     payload["payments"] = database_payments
     payload["pendingPayments"] = database_pending_payments
-    payload["walletTransactions"] = [
-        {
-            "id": item.id,
-            "memberId": item.member_id,
-            "amount": item.amount,
-            "type": item.transaction_type,
-            "note": item.note,
-            "date": item.created_at.isoformat(),
-        }
-        for item in db.scalars(select(WalletTransaction).order_by(WalletTransaction.created_at))
-    ]
     payload.setdefault("receipts", [])
-    payload["pendingWalletTopUps"] = [
-        {
-            "id": item.id,
-            "memberId": item.member_id,
-            "amount": item.amount,
-            "upiReference": item.upi_reference,
-            "date": item.created_at.isoformat(),
-        }
-        for item in db.scalars(select(PendingWalletTopUp).order_by(PendingWalletTopUp.created_at))
-    ]
     return payload
 
 
@@ -259,49 +226,13 @@ def update_application_state(payload: dict, user: User = Depends(current_user), 
                         raise HTTPException(status_code=403, detail="Existing payment records cannot be changed")
                 elif item.get("memberId") != user.id:
                     raise HTTPException(status_code=403, detail="A resident can only add their own payment records")
-        current_topups = {item.get("id"): item for item in current_payload.get("pendingWalletTopUps", [])}
-        for item in payload.get("pendingWalletTopUps", []):
-            if item.get("id") in current_topups:
-                if item != current_topups[item.get("id")]:
-                    raise HTTPException(status_code=403, detail="Existing wallet top-up requests cannot be changed")
-            elif item.get("memberId") != user.id:
-                raise HTTPException(status_code=403, detail="A resident can only add their own wallet top-up requests")
         new_payments = [
             item for item in payload.get("payments", [])
             if item.get("id") not in {current.get("id") for current in current_payload.get("payments", [])}
         ]
         approved_amount = sum(int(item.get("amount", 0)) for item in new_payments)
         due_reduction = int(current_member["due"]) - int(incoming_member.get("due", current_member["due"]))
-        wallet_reduction = int(current_member["wallet"]) - int(incoming_member.get("wallet", current_member["wallet"]))
-        wallet_payment_amount = sum(
-            int(item.get("amount", 0))
-            for item in new_payments
-            if str(item.get("method", "")).lower().replace(" ", "_") == PaymentMethod.WALLET.value
-        )
-        current_wallet_transactions = {
-            item.get("id"): item for item in current_payload.get("walletTransactions", [])
-        }
-        new_wallet_transactions = [
-            item for item in payload.get("walletTransactions", [])
-            if item.get("id") not in current_wallet_transactions
-        ]
-        for item in payload.get("walletTransactions", []):
-            if item.get("id") in current_wallet_transactions:
-                if item != current_wallet_transactions[item.get("id")]:
-                    raise HTTPException(status_code=403, detail="Existing wallet transactions cannot be changed")
-            elif item.get("memberId") != user.id:
-                raise HTTPException(status_code=403, detail="A resident can only add their own wallet transactions")
-        wallet_credits = sum(
-            int(item.get("amount", 0))
-            for item in new_wallet_transactions
-            if str(item.get("type", "")).lower() == "credit"
-        )
-        wallet_debits = sum(
-            int(item.get("amount", 0))
-            for item in new_wallet_transactions
-            if str(item.get("type", "")).lower() == "debit"
-        )
-        if due_reduction != approved_amount or wallet_reduction != wallet_debits - wallet_credits:
+        if due_reduction != approved_amount:
             raise HTTPException(status_code=400, detail="Resident payment changes do not match the balance changes")
         payload = dict(payload)
         payload["settings"] = current_payload["settings"]
@@ -334,20 +265,16 @@ def update_application_state(payload: dict, user: User = Depends(current_user), 
                 password_hash=hash_password(password),
                 role=Role.MEMBER,
                 outstanding_due=int(member_payload.get("due", 0)),
-                wallet_balance=int(member_payload.get("wallet", 0)),
             )
             db.add(member)
         elif member.role == Role.MEMBER:
             member.name = str(member_payload.get("name", member.name)).strip()
             member.outstanding_due = int(member_payload.get("due", member.outstanding_due))
-            member.wallet_balance = int(member_payload.get("wallet", member.wallet_balance))
         clean_member = dict(member_payload)
         clean_member.pop("password", None)
         stored_members.append(clean_member)
     manager_payload = payload.get("manager", {})
     manager = db.scalar(select(User).where(User.role == Role.MANAGER))
-    if manager and "wallet" in manager_payload:
-        manager.wallet_balance = int(manager_payload["wallet"])
     incoming_cost_ids = {str(item.get("id")) for item in settings_payload.get("additionalCosts", [])}
     for item in db.scalars(select(AdditionalCost)):
         if item.id not in incoming_cost_ids and not item.applied:
@@ -361,29 +288,6 @@ def update_application_state(payload: dict, user: User = Depends(current_user), 
         item.month_key = str(item_payload.get("monthKey", ""))
         item.applied = bool(item_payload.get("applied", False))
         db.add(item)
-    for item_payload in payload.get("walletTransactions", []):
-        if not item_payload.get("id") or db.get(WalletTransaction, item_payload["id"]):
-            continue
-        db.add(WalletTransaction(
-            id=str(item_payload["id"]),
-            member_id=str(item_payload["memberId"]),
-            amount=int(item_payload.get("amount", 0)),
-            transaction_type=str(item_payload.get("type", "credit")),
-            note=str(item_payload.get("note", "")),
-        ))
-    incoming_topups = {str(item.get("id")) for item in payload.get("pendingWalletTopUps", [])}
-    for item in db.scalars(select(PendingWalletTopUp)):
-        if item.id not in incoming_topups:
-            db.delete(item)
-    for item_payload in payload.get("pendingWalletTopUps", []):
-        if not item_payload.get("id") or db.get(PendingWalletTopUp, item_payload["id"]):
-            continue
-        db.add(PendingWalletTopUp(
-            id=str(item_payload["id"]),
-            member_id=str(item_payload["memberId"]),
-            amount=int(item_payload.get("amount", 0)),
-            upi_reference=str(item_payload.get("upiReference", "")),
-        ))
     for item_payload in payload.get("payments", []) + payload.get("pendingPayments", []):
         payment_id = item_payload.get("id")
         if not payment_id or db.get(Payment, payment_id):
@@ -488,11 +392,7 @@ def create_payment(payload: PaymentCreate, user: User = Depends(current_user), d
             raise HTTPException(status_code=400, detail="A UPI or bank reference is required")
         payment_status = PaymentStatus.PENDING.value
     else:
-        if payload.method == PaymentMethod.WALLET.value and payload.amount > user.wallet_balance:
-            raise HTTPException(status_code=400, detail="Insufficient wallet balance")
         user.outstanding_due -= payload.amount
-        if payload.method == PaymentMethod.WALLET.value:
-            user.wallet_balance -= payload.amount
         payment_status = PaymentStatus.APPROVED.value
     payment = Payment(member_id=user.id, amount=payload.amount, method=payload.method, reference=payload.reference.strip(), status=payment_status)
     if payment_status == PaymentStatus.APPROVED.value:
