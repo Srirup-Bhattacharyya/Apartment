@@ -257,9 +257,34 @@ def update_application_state(payload: dict, user: User = Depends(current_user), 
         due_reduction = int(current_member["due"]) - int(incoming_member.get("due", current_member["due"]))
         wallet_reduction = int(current_member["wallet"]) - int(incoming_member.get("wallet", current_member["wallet"]))
         wallet_payment_amount = sum(
-            int(item.get("amount", 0)) for item in new_payments if item.get("method") == PaymentMethod.WALLET.value
+            int(item.get("amount", 0))
+            for item in new_payments
+            if str(item.get("method", "")).lower().replace(" ", "_") == PaymentMethod.WALLET.value
         )
-        if due_reduction != approved_amount or wallet_reduction != wallet_payment_amount:
+        current_wallet_transactions = {
+            item.get("id"): item for item in current_payload.get("walletTransactions", [])
+        }
+        new_wallet_transactions = [
+            item for item in payload.get("walletTransactions", [])
+            if item.get("id") not in current_wallet_transactions
+        ]
+        for item in payload.get("walletTransactions", []):
+            if item.get("id") in current_wallet_transactions:
+                if item != current_wallet_transactions[item.get("id")]:
+                    raise HTTPException(status_code=403, detail="Existing wallet transactions cannot be changed")
+            elif item.get("memberId") != user.id:
+                raise HTTPException(status_code=403, detail="A resident can only add their own wallet transactions")
+        wallet_credits = sum(
+            int(item.get("amount", 0))
+            for item in new_wallet_transactions
+            if str(item.get("type", "")).lower() == "credit"
+        )
+        wallet_debits = sum(
+            int(item.get("amount", 0))
+            for item in new_wallet_transactions
+            if str(item.get("type", "")).lower() == "debit"
+        )
+        if due_reduction != approved_amount or wallet_reduction != wallet_debits - wallet_credits:
             raise HTTPException(status_code=400, detail="Resident payment changes do not match the balance changes")
         payload = dict(payload)
         payload["settings"] = current_payload["settings"]
